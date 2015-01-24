@@ -1,0 +1,130 @@
+#+TITLE: Process Control
+
+* Process Identiiers
+
+Process ID is the identifier for a process.
+
+Process 0 is usually the scheduler process and is ofen konwn as the kernel.
+
+Process 1 is usually the init process and is invoked by the kernel at the end
+of the bootstrap procedure. /etc/init in older UNIX system and /sbin/init in
+newer version. Then read some system-dependent initialization files, brings the
+system to a certain state, such as multiuser.
+
+The following functions return these identifiers.
+
+#+BEGIN_SRC cpp
+
+#include <unistd.h>
+
+pid_t getpid(void);
+
+pid_t getppid(void);
+
+uid_t getuid(void);
+
+uid_t geteuid(void);
+
+gid_t getgid(void);
+
+get_t getegid(void);
+
+#+END_SRC
+
+* fork function
+
+An existing process can create a new one by calling the fork function.
+
+#+BEGIN_SRC cpp
+
+#include <unistd.h>
+
+pid_t fork(void);
+
+#+END_SRC
+
+The new process created by fork is called the child process.This function is
+called once but return twice. The only difference in the returns is that the
+return value in child is 0, whereas the return value in the parent is the
+process ID of the new child. The child and parent process just share the text
+segment.
+
+** File Sharing
+
+all file descriptors are open in the parent are dumplicated in the child. Like
+the *dup* function had been called for each file descriptor.So parent and child
+share the same file table entry. So parent and child share the same file offset.
+
+** wait and waitpid Functions
+
+a process that has terminated, but whose parent has not yet waited for it, is
+called a _zombie_.
+
+When the process exit , the kernel keeps a small amout of information for every
+terminating process, this information consists of the process ID, the
+termination status of the process, and the amount of CPU time taken by the
+process.
+
+When a process terminates, either normally or abnormally, the kernel notifies
+the parent by sending the SIGCHLD signal to the parent.
+
+When call *wait* or *waitpid* can:
++ Block, if all of its children are stilling running.
++ Return immediately with the termination status of a child, if a child has
+  terminated and is waiting for its termination stats to be fetched.
++ Return immediately with an error if it doesn't have any child processes.
+
+#+BEGIN_SRC 
+
+#include <sys/wait.h>
+
+pid_t wait(int *statloc);
+
+pid_t waitpid(pid_t pid, int * statloc, int options);
+
+return the terminate child process ID.
+
+#+END_SRC
+
+The differences between these two functions are as follows:
++ The wait function can block the caller until a child process terminates,
+  whereas waitpid has an options that prevents it from blocking.
++ The waitpid function doesn't wait for the child that terminates first; it has
+  a number of options that control which process it waits for.
+
+the argument _statloc_ is a poiner to an interger. if this argument is not null
+pointer, the termination status of the terminated process is stored in the
+location pointed to by the argument.
+
+The four mutaually exclusive macros to tell us how the process terminated.
+
+| Macro                | Description                                                                                                                                                                                                     |
+|----------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| WIFEXITED(status)    | True if status was returned for a child that terminated normally.In this case, we can execute WEXITSTATUS(status) to fetch the low-order 8 bits of the argument that the child passed to exit, _exit, or _Exit. |
+| WIFSIGNALED(status)  | True if status was returned for a child that terminated abnormally, by receipt of a signal that it didn't catch. execute WTERMSIG(status) to fetch the signal number that caused the termination.               |
+| WIFSTOPPED(status)   | True if status was returned for a child that currently stopped. execute WSTOPSIG(status) to fetch the signal number that caused the child to stop.                                                              |
+| WIFCOUTINUED(status) | True if status was returned for a child that has been continued after a job control stop.                                                                                                                       |
+
+** User ID and Group ID
+
+#+BEGIN_SRC cpp
+
+#include <unistd.h>
+
+int setuid(uid_t uid);
+
+int setgid(gid_t gid);
+
+#+END_SRC
+
++ If the process has superuser privileges, the *setuid* function sets the real
+  user ID, effective user ID, and saved set-user-ID to uid.
++ If the process does not have superuser privileges, but uid equals either the
+  real user ID or the saved set-user-ID, setuid sets only the effective user ID
+  to uid.
++ If neither of these two conditions is ture, errno is set EPERM and -1 is
+  returned.
+
+
+
+

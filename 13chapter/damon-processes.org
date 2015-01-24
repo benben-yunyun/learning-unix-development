@@ -1,0 +1,103 @@
+#+TITLE: Daemon Processes
+
+* 简介
+  
+  *Daemon Processes* 为一类特殊程序，长时间运行。与系统共生，一起运行，知道系统关闭。
+  
+  *Daemon Processes* 是一个没有控制终端的程序，运行在后台。
+  
+** daemon 特征
+   
+- umask 设置文件权限
+- fork 并 使得 父进程退出。这样能够保证该子进程具有一个新的进程id，保证该子进程不是一个进程组leader
+- 调用setsid去生成一个新的session。
+- 更改工作目录
+- 没有用的文件描述符需要关闭。
+- 将文件描述符 0，1，2 链接到 \/dev\/null
+
+* Error Logging
+
+  总共有3种log：
+- 内核，通过读写 \/dev\/klog
+- 用户程序调用 *syslog* ， 读写 \/dev\/log
+- TCP\/IP 发送 日志 到 端口514
+
+日志daemon，首先读取配置文件 \/etc\/syslog.conf. 
+
+用户程序，日志输出：
+#+BEGIN_SRC cpp
+void openlog(const char * ident, int option, int facility);
+void syslog(int priority, const char * format, ...);
+void closelog(void);
+int setlogmask(int maskpri);
+#+END_SRC
+
+
+** openlog
+
+*openlog* 是可选的，如果没有调用，则 *syslog* 会调用。 *closelog* 同样是可选的。
+
+*openlog* 可以设定我们需要设定的标示符 _ident_ 。 _option_ 是一个bitmask，用来设置一些选项。  _facility_ 用来表示日志的不同平台。
+
+
+option相关设置：
+| option     | 描述                                                               |
+|------------+--------------------------------------------------------------------|
+| LOG_CONS   | 如果日志无法写到 syslogd, 则写到终端console                        |
+| LOG_NDELAY | 写日志文件的时候，直接打开socket，不等到第一条日志产生才打开socket |
+| LOG_NOWAIT | 不等待子进程                                                       |
+| LOG_ODELAY | 延迟连接 syslogd 知道第一条日志产生                                |
+| LOG_PERROR | 写日志的时候，同时写到标准错误描述符             |
+| LOG_PID    | 写日志带着pid                                                 |
+
+facility相关设置：
+| facility       | 描述                               |
+|----------------+------------------------------------|
+| LOG_AUDIT      | audit设备                          |
+| LOG_AUTH       | 认证程序: login, su, getty...      |
+| LOG_AUTHPRIV   | 和LOG_AUTH一样，但是由一些权限限制 |
+| LOG_CONSOLE    | 写到\/dev\/console                 |
+| LOG_CRON       | cron and at                        |
+| LOG_DAEMON     | system daemon: inetd, routed       |
+| LOG_FTP        | FTP daemon. ftpd                   |
+| LOG_KERN       | Kernel 产生日志                    |
+| LOG_LOCAL[0-7] | 保留给本地用                       |
+| LOG_LPR        | line printer system: lpd, lpc...   |
+| LOG_MAIL       | mail system                        |
+| LOG_NEWS       | 新闻系统                           |
+| LOG_NTP        | 网络时间协议程序                   |
+| LOG_SECURITY   | 安全系统                           |
+| LOG_SYSLOG     | syslogd 自己                       |
+| LOG_USER       | 用户产生的日志                     |
+| LOG_UUCP       | the UUCP system                    |
+
+
+** syslog
+
+
+*syslog* 用来生成日志。 _priority_ 是 _facility_ 和 _level_ 的组合。
+
+_format_ 中 %m 表示将 错误字符串写出(strerror).
+
+| level       | 描述                                            |
+|-------------+-------------------------------------------------|
+| LOG_EMERG   | emergency(system is unusable)(highest priority) |
+| LOG_ALERT   | condition must be fixed immediately             |
+| LOG_CRIT    | critical condition (hard device error)          |
+| LOG_ERR     | error condition                                 |
+| LOG_WARNING | warning condition                               |
+| LOG_NOTICE  | normal,but significant condition                |
+| LOG_INFO    | informational message                           |
+| LOG_DEBUG   | debug message (lowest priority)                 |
+
+类似 *vsprintf*， *syslog* 也提供了一个函数：
+#+BEGIN_SRC cpp
+void vsyslog(int priority, const char * format, va_list arg);
+#+END_SRC
+
+
+
+** setlogmask
+
+设置logmask，用来屏蔽一些等级的日志。
+

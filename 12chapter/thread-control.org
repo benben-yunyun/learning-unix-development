@@ -1,0 +1,319 @@
+#+startup: indent
+#+TITLE: 线程控制
+
+
+* 线程属性 thread attributes
+
+  #+BEGIN_SRC cpp
+  int pthread_attr_init(pthread_attr_t * attr);
+  int pthread_attr_destroy(pthread_attr_t * attr);
+  0 if OK, error number on failure
+  #+END_SRC
+
+| Name        | Description                                       |
+|-------------+---------------------------------------------------|
+| detachstate | detached thread attribute                         |
+| guardsize   | guard buffer size in bytes at end of thread stack |
+| stackaddr   | lowest address of thread stack                    |
+| stacksize   | minimum size in bytes of thread stack             |
+
+** detach state
+
+#+BEGIN_SRC cpp
+int pthread_attr_getdetachstate(const pthread_attr_t * restrict attr,
+int *detachstate);
+int pthread_attr_setdetachstate(pthread_attr_t * attr, int detachstate);
+#+END_SRC
+
+*detachstate*: *PTHREAD_CREATE_DETACHED* *PTHREAD_CREATE_JOINABLE* 
+
+** stack attribute
+
+编译期可以通过检测是否定义 *_POSIX_THREAD_ATTR_STACKADDR* 和 *_POSIX_THREAD_ATTR_STACKSIZE* ，判断是否支持 stack attribute.
+
+运行期可以通过函数 *sysconf* 检测 *_SC_THREAD_ATTR_STACKADDR* 和 *_SC_THREAD_ATTR_STACKSIZE* , 判断是否支持 stack attribute.
+
+#+BEGIN_SRC cpp
+int pthread_attr_getstack(const pthread_attr_t * restrict attr,
+void ** restrict stackaddr,
+size_t * restrict stacksize);
+int pthread_attr_setstack(pthread_attr_t * attr,
+void * stackaddr, size_t stacksize);
+#+END_SRC
+
+*stacksize* 不能小于 PTHREAD_STACK_MIN.
+
+** gurad size
+
+guard size 是保护stack overflow的，在stack后面追加一段内存。
+
+#+BEGIN_SRC cpp
+int pthread_attr_getguardsize(const pthread_attr_t * restrict attr,
+size_t * restrict guardsize);
+int pthread_attr_setguardsize(pthread_attr_t * attr, size_t guardsize);
+#+END_SRC
+
+* 同步属性 Synchronization Attributes
+
+** Mutex Attributes
+
+#+BEGIN_SRC cpp
+int pthread_mutexattr_init(pthread_mutexattr_t * attr);
+int pthread_mutexattr_destroy(pthread_mutexattr_t * attr);
+#+END_SRC
+
+三种属性： *process-shared* , *robust* , *type*.
+
+*** process-shared
+*process-shared* 可以通过检测 *_POSIX_THREAD_PROCESS_SHARED*，判断是否支持。
+或者检测 *_SC_THREAD_PROCESS_SHARED*.
+
+多个线程默认可以访问共享对象， *process-shared* 默认设置为 *PTHREA_PROCESS_PRIVATE*. 
+
+也可以将对象mapping到一个独立的内存空间，使得多个进程共享访问。这时候需要一个 *process-shared* mutex 为 *PTHREAD_PROCESS_SHARED*. 使得该mutex可以在多个进程间共享。
+**** 查询和设置
+
+#+BEGIN_SRC cpp
+int pthread_mutexattr_getpshared(const pthread_mutexattr_t * restruct attr,
+int * restrict pshared);
+int pthread_mutexattr_setpshared(pthread_mutexattr_t * attr,
+int pthread);
+#+END_SRC
+
+
+
+
+*** robust
+
+*robust* 控制多个进程的共享mutex，关于一个终结进程，但是没有释放mutex的行为。
+
+#+BEGIN_SRC cpp
+int pthread_mutexattr_getrobust(const pthread_mutexattr_t * restrict attr,
+int * restrict robust);
+int pthread_mutexattr_setrobust(pthread_mutexattr_t * attr,
+int robust);
+#+END_SRC
+
+*robust* : 有两种状态。
+- PTHREAD_MUTEX_STALLED
+  表示遇到一个锁定mutex的进程终结时，不采取任何措施。
+- PTHREAD_MUTEX_ROBUST
+  表示遇到一个锁定mutex的进程终止时，另一个进程锁定mutex时，并不会一直阻塞，而是返回一个 *EOWNERDEAD* 。 并且该进程获得mutex。该进程必须做一个恢复工作。一旦该进程释放该mutex后，mutex将不能够再使用。 为了让该mutex继续能够使用，可以调用 *pthread_mutex_consistent*。
+
+#+BEGIN_SRC cpp
+int pthread_mutex_consistent(pthread_mutex_t * mutex);
+#+END_SRC
+
+如果没有调用 *pthread_mutex_consistent* ，再获得该mutex时，将获得一个错误 ENOTRECOVERABLE.   
+
+
+
+*** type
+
+*type* 控制mutex的锁定特性。
+
+| types                    | description                     |
+|--------------------------+---------------------------------|
+| PHTREAD_MUTEX_NORMAL     | 标准mutex，并不做任何的死锁检测 |
+| PTHREAD_MUTEX_ERRORCHECK | 检测错误                        |
+| PTHREAD_MUTEX_RECURSIVE  | 递归锁                          |
+| PTHREAD_MUTEX_DEFAULT    | 默认的锁                            |
+
+#+BEGIN_SRC cpp
+int pthread_mutexattr_gettype(const pthread_mutexattr_t * restrict attr, int * restrict type);
+int pthread_mutexattr_settype(pthread_mutexattr_t * attr, int type);
+#+END_SRC
+
+
+
+
+
+** Reader-Writer Lock Attributes
+
+#+BEGIN_SRC cpp
+int pthread_rwlockattr_init(pthread_rwlockattr_t * attr);
+int pthread_rwlockattr_destroy(pthread_rwlockattr_t * attr);
+#+END_SRC
+
+读写锁只支持 *process-shared* 属性。
+
+#+BEGIN_SRC cpp
+int pthread_rwlockattr_getpshared(const pthread_rwlockattr_t * restrict attr,
+int * restrict pshared);
+int pthread_rwlockattr_setshared(pthread_rwlockattr_t * attr,
+int pshared);
+#+END_SRC
+
+
+** Condition Variables Attributes
+
+条件变量可以设置两个属性： *process-shared* 和 *clock*.
+
+#+BEGIN_SRC cpp
+int pthread_condattr_init(pthread_condattr_t * attr);
+int pthread_condattr_destroy(pthread_condattr_t * attr);
+#+END_SRC
+
+*** process shared属性的获得和设置
+
+#+BEGIN_SRC cpp
+int pthread_condattr_getpshared(const pthread_condattr_t * restrict attr,
+int * restrict pshared);
+int pthread_condattr_setpshared(pthread_condattr_t * attr, int pshared);
+#+END_SRC
+
+
+*** clock 属性
+
+#+BEGIN_SRC cpp
+int pthread_condattr_getclock(const pthread_condattr_t * restrict attr,
+clockid_t * restrict clock_id);
+int pthread_condattr_setclock(pthread_condattr_t * attr,
+clockid_t clock_id);
+#+END_SRC
+
+
+
+
+** Barrier Attributes
+
+#+BEGIN_SRC cpp
+int pthread_barrierattr_init(pthread_barrierattr_t * attr);
+int pthread_barrierattr_destroy(pthread_barrierattr_t * attr);
+#+END_SRC
+
+只有一个属性：*process thared*.
+
+
+
+
+
+* Reentrancy 可重入
+
+可同时被多个线程调用的函数，叫做可重入函数 *Reentrancy* ，也可以叫做线程安全 *thread-safe*.
+
+
+
+
+
+
+
+* Thread-Specific Data
+
+#+BEGIN_SRC cpp
+int pthread_key_create(pthread_key_t * keyp, void(*destructor)(void*));
+#+END_SRC
+
+创建key，该key可以被所有的thread访问。但是每一个thread都有一个独立的内存，与该key关联。
+
+PTHREAD_KEYS_MAX标志线程最多可以拥有的keys。
+
+#+BEGIN_SRC cpp
+int pthread_key_delete(pthread_key_t key);
+#+END_SRC
+调用destructor，解析key。
+
+保证初始化一次key：
+#+BEGIN_SRC cpp
+pthread_once_t initflag = PTHREAD_ONCE_INIT;
+int pthread_once(pthread_once_t * initflag, void(*initfn)(ovid));
+#+END_SRC
+其中 *initfn* 用来初始化一个key。
+
+一旦key创建完毕，既可以赋值了：
+#+BEGIN_SRC cpp
+void * pthread_getspecific(pthread_key_t key);
+int pthread_setspecific(pthread_key_t key, const void * value);
+#+END_SRC
+
+
+* Cancel Options
+
+*pthread_attr_t* 并不包含 *cancelability state* 和 *cancelability type* 两个属性。
+
+*cancelability state* 有两种状态： *PTHREAD_CANCEL_ENABLE* , *PTHREAD_CANCEL_DISABLE*.
+
+** 改变取消状态 cancelibility state
+
+#+BEGIN_SRC cpp
+int pthread_setcancelstate(int state, int * oldstate);
+#+END_SRC
+
+** 取消节点
+
+在调用 *pthread_cancel* 后，并不是等待取消的线程终结，而是继续运行。默认情况下，一个线程会继续运行，知道该线程到达一个 *cancellation point*.
+
+*cancellation point* 为一些节点，线程查看是否已经被取消。然后执行相关操作。为POSIX定义的一些函数。
+
+#+BEGIN_SRC cpp
+void pthread_testcancel(void);
+#+END_SRC
+
+也可以通过上诉函数，增加线程的检测节点。
+
+** 取消类型 cancellation type
+
+#+BEGIN_SRC cpp
+int pthread_setcanceltype(int type, int *oldtype);
+#+END_SRC
+
+*cancellation type* 有两种类型： *PTHREAD_CANCEL_DEFERRED* 和 *PTHREAD_CANCEL_ASYNCHRONOUS*.
+
+默认为 *PTHREAD_CANCEL_DEFERRED* 只在取消节点上进行检测。 而 *PTHREAD_CANCEL_ASYNCHRONOUS* 可以在任何地方检测。
+
+
+* 线程和信号
+
+#+BEGIN_SRC cpp
+int pthread_sigmask(int how, const sigset_t * restrict set,
+sigset_t * restrict oset);
+#+END_SRC
+
+该信号设置函数，针对线程。
+
+#+BEGIN_SRC cpp
+int sigwait(const sigset_t * restrict set, int * restrict signop);
+#+END_SRC
+
+该函数用来等待某个信号。该函数会自动的将set信号集的信号设置为非阻塞。
+
+*set*: 表示线程需要等待的信号集。
+*signop*: 函数返回时候，返回发生的信号。
+
+** 线程发送信号
+
+#+BEGIN_SRC cpp
+int pthread_kill(pthread_t thread, int signo);
+#+END_SRC
+
+
+* 线程 fork
+
+线程调用fork，会copy整个进程中的mutex，reader-writer lock, condition vartiables。
+
+而线程调用fork仅仅会会fork当前的线程，所以当父进程有多个线程的时候，子进程需要进行一些锁的状态处理。
+
+调用 *fork handlers* 去清楚锁状态：
+#+BEGIN_SRC cpp
+int pthread_atfork(void (*prepare)(void), void(*parent)(void),
+void (*child)(void));
+#+END_SRC
+
+参数说明：
+- prepare : 在 fork 创建子进程之前 调用的句柄, 主要是获得所有父进程的锁；
+- parent : 在fork创建子进程之后，在frok返回之前，父进程调用的句柄，主要工作是unlock所有prepare获得的锁
+- child : 在子进程的fork返回之前，子进程去unlock所有prepare获得的锁
+
+
+
+
+
+
+
+
+* 线程 I/O
+
+多线程共享文件描述符。
+
+使用 pread 和 pwrite 将 lseek 和 read ， write 当成原子操作。
+

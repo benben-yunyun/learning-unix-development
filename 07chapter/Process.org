@@ -1,0 +1,116 @@
+#+TITLE: Process Environment
+
+* Process Termination
+
+正常退出：
++ Return from main
++ Calling exit
++ Calling _exit or _Exit
++ Return of the last thread from its start routione
++ Calling pthread_exit from the last thread
+
+异常退出：
++ Calling abort
++ Receipt of a signal
++ Response of the last thread to a cancellation request
+
+
+** Exit Function
+
+_exit and _Exit return to the kernel immediately without clean.
+
+exit performs certaion cleanup processing and return to the kernel. cleaning
+wrok include *shutdown* the standard I/O library and fclose the all open
+streams.
+
+
+** atexit Function
+
+a process can register at least 32 functions that are automatically called by
+exit. These are called _exit handlers_ and are registered by calling the atexit
+function.
+
+#+BEGIN_SRC cpp
+
+#include <stdlib.h>
+
+int atexit(void (*func)(void));
+
+#+END_SRC
+
+The *exit* function calls these funtions in reverse order of their registration.
+
+POSIX.1 extends the ISO C standard by specifying that any exit handlers
+installed will be cleared if the program call any of the *exec* family of
+function.
+
+* Environment List
+
+POSIX.1 has two methods to get environment:
++ extern char ** environ. this variable is a array of char string with last
+  item is null
++ main(int argc, char ** argv, char ** env). use env
+
+the environment strings are usually of the form _name=value_.
+
+#+BEGIN_SRC cpp
+
+#include <stdlib.h>
+
+char * getenv(const char * name);
+null if not found.
+#+END_SRC
+
+* resource limit
+
+resource limit can be queried by *getrlimit* and changed by *setrlimit*.
+
+#+BEGIN_SRC cpp
+#include <sys/resource.h>
+
+int getrlimit(int resource, struct rlimit * rlptr);
+
+int setrlimit(int resource, const struct rlimit * rlptr);
+
+struct rlimit {
+rlim_t rlim_cur;  soft limit: current limit
+rlim_t rlim_max;  hard limit: maximum value for rlim_cur
+}
+
+#+END_SRC
+
+three rules govern the changing of the resource limit:
++ A process can change its soft limit to a value less than or equal to its hard
+  limit.
++ A process can lower its hard limit to a value greater than or equal to its
+  soft limit.
++ Only a superuser process can raise a hard limit.
+
+  
+An infinite limit is specified by the constant RLIM_INFINITY.
+
+The _resource_ argument takes on one of the following values:
+| resource          | meaning                                                                                                               |
+|-------------------+-----------------------------------------------------------------------------------------------------------------------|
+| RLIMIT_AS         | maximum size in bytes of a process's total available memory                                                           |
+| RLIMIT_CORE       | maximum size in bytes of a core file                                                                                  |
+| RLIMIT_CPU        | maximum amount of cpu time in seconds. when the soft limit is exceeded, the SIGXCPU signal is sent to the process     |
+| RLIMIT_DATA       | maximum size in bytes of the data segment: the sum of initialized data, uninitialized data, heap                      |
+| RLIMIT_FSIZE      | maximum size in bytes of a file that may be created: when the soft limit is exceeded, the SIGXFSZ signal will be sent |
+| RLIMIT_MEMLOCK    | maximum amount of memory in bytes a process can lock into memory using mlock                                          |
+| RLIMIT_MSGQUEUE   | maximum amount of memory in bytes a process can allocate for POSIX message queues                                     |
+| RLIMIT_NICE       | a process's nice value                                                                                                |
+| RLIMIT_NOFILE     | maximum number of open files per process                                                                              |
+| RLIMIT_NPROC      | maximum number of child process per real user ID                                                                      |
+| RLIMIT_NPTS       | maximum number of pseudo terminals a user can have open at one time                                                   |
+| RLIMIT_RSS        | maximum resident set size in bytes                                                                                    |
+| RLIMIT_SBSIZE     | maximum size in bytes of socket buffers                                                                               |
+| RLIMIT_SIGPENDING | maximum number of signals that can be queued for a process                                                            |
+| RLIMIT_STACK      | maximum size in bytes of the stack                                                                                    |
+| RLIMIT_SWAP       | maxmimu amount of swap space in bytes                                                                                 |
+| RLIMIT_VMEM       | synonym for RLIMIT_AS                                                                                                 |
+
+
+
+
+

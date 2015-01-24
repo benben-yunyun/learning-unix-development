@@ -1,0 +1,189 @@
+#+TITLE: Process Relationships
+
+
+* Introduction
+
+every process has a parent process (the initial kernel-level process is usually
+its own parent). The parent process is notified when the child terminates, and
+the parent can obtaion the child's exit status.
+
+* Terminal Logins
+
+** BSD Terminal Logins
+
+the kernel creates process ID 1, the init process and it is init that things
+brings the system up in multiuser mode. The *init* process reads the file
+_/etc/ttys_ and for every terminal device that allows a login, dose a *fork*
+followed by an exec of the program *getty*.
+
+*getty* calls *open* for the terminal device. The terminal is opened for
+reading and writing. Once the device is open, file descriptors 0, 1 and 2 are
+set to the device.Then *getty* outputs something like _login:_ and waits for us
+to enter our user name. When we enter our user name, *getty*'s job is complete,
+ant it then invokes the *login* program, similar to _execle("/bin/login", "login", "-p", username, (char*) 0, envp);_
+
+*init* invoke *getty* with an empty environment; *getty* creates an environment
+for login.
+
+The *login* program get our name, it can tell getpwnam to fetch our passwod
+file entry. Then *login* calls *getpass* to display the prompt _Password:_ and
+read our password. It calss *crypt* to encrypt the password that we entered and
+compares the encryted result to the *pw_passwd* field from our shadow file
+entry. If the *login* attempt faills because of an invalid password, *login*
+calls *exit* with an argument o 1. This termination will be noticed by the
+parent(*init*), and it will do anthor *fork* followed by an exec of getty,
+starting the procedure over again for this terminal.
+
+If we log in correctly, *login* will:
++ Change to our home directory(*chdir*)
++ Change the ownership of our terminal device(chown) so we own it
++ Change the access permissions for our terminal device so we have permission
+  to read from and write to it
++ Set our group IDs by calling setgid and initgroups
++ Initialize the environment with all the information that *login* has.
++ Change to our user ID(*setuid*) and invokes our login shell, as in
+  _execl("/bin/sh", "-sh", (char*)0);_
+
+
+** Process Groups
+
+A process group is a collection of one or more processes, usually associated
+with the same job. Each process group has a unique process group ID.
+
+#+BEGIN_SRC cpp
+
+#include <unistd.h>
+
+pid_t getpgrp(void);
+
+#+END_SRC
+
+Each process group can have a process group leader. The leader is identified by
+its process group ID being equal to its process ID. The process group still
+exists, as long as at least one process is in the group, regardless of whether
+the group leader terminates. The last remaining process in the process group
+can either terminate or enter some other process group.
+
+A process joins an existing process group or creates a new process group by
+calling *setpgid* 
+
+#+BEGIN_SRC cpp
+
+#include <unistd.h>
+
+int setpgid(pid_t pid, pid_t pgid);
+
+#+END_SRC
+
+A process can set the process goup ID of only itself or any of its
+children. Furthermore, it can't change the process group ID of one of its
+children after that child has called one of the *exec* function.
+
+** Sessions
+
+A session is a collection of one or more process groups.
+
+A session establishes a new session by calling the *setsid* function.
+
+#+BEGIN_SRC cpp
+
+#include <unistd.h>
+
+pid_t setsid(void);
+
+#+END_SRC
+
+If the calling process is not a process group leader, this function creates a
+new session. Three things happen:
++ The process becomes the _session leader_ of this new session.(A session
+  leader is the process that creates a session.) The process is the only
+  process in this new session.
++ The process becomes the process group leader of a new process group. The new
+  process group ID is the process ID of the calling process.
++ The process has no controlling terminal.
+
+
+** Controlling Terminal
+
+Sessions and process groups have a few other cahracteristics.
+
++ A session can have a single _controlling terminal_.This is usually the
+  terminal deveice on which we log in.
++ The session leader that establishes the connection to the _controlling
+  terminal_ is called the _controlling process_.
++ The process groups within a session can be divided into a single _foregroud
+  process group_ and one or more _background process groups_.
++ If a session has a _controlling terminal_, it has a single foreground process
+  group and all other process groups in the session are backgroud process group.
++ Whenever we press the terminal's interrupt key, the interrupt signal is sent
+  to all processes in the foreground process group.
++ Whenever we press the terminal's quit key, the quit signal is sent to all
+  processes in the foreground process group.
+
+_/dev/tty_ is the synonym file within the kernel for the controlling
+terminal.Naturally if the program doesn't have a controlling terminal,
+the *open* of this device will fail.
+
+** tcgetpgrp, tcsetpgrp and tcgetsid Functions
+
+We need a way to tell the kernel which process group is the foreground process
+group, so that terminal device driver knows where to send the terminal input
+and the terminal-generated signals.
+
+#+BEGIN_SRC cpp
+
+#include <unistd.h>
+
+pid_t tcgetpgrp(int fd);
+
+int tcsetpgrp(int fd, pid_t pgrpid);
+
+#+END_SRC
+
+The function *tcgetpgrp* returns the process group ID of the foreground process
+group associated with the terminal open on fd.
+
+If the process has a controlling terminal, the process can call *tcsetpgrp* to
+set the foreground process group ID to pgrpid. the value /pgrpid/ must be the
+process group ID of a process group in the same session, and fd must refer to
+the controlling terminal of the session.
+
+The *tcgetsid* function allows an application to obtain the process group ID
+for the session leader given a file descriptor for the controlling TTY.
+
+#+BEGIN_SRC cpp
+
+#include <termios.h>
+
+pid_t tcgetsid(int fd);
+
+Returns: session leader's process group ID if OK, -1 on error.
+
+#+END_SRC
+
+** Job Control
+
+Job Control allows us to start multiple jobs from a single terminal and to
+control which jobs can access the terminal and which jobs are run in the
+background. Job control requires three forms of supports:
+
+Job Control can receive three signals with terminal driver generated:
++ The interrupt character (typically DELETE or Control-C) generates SIGINT.
++ The quit character (typically Control-backslash) generates SIGQUIT.
++ The suspend character (typically Control-Z) generates SIGTSTP.
+
+These three signals generated to foreground process group. It is not an error
+for a background job to try to read from the terminal, but the terminal driver
+detects this and sends a special signal to the background job: SIGTTIN.This
+signal normally stops the background job; by using the shell, we are notified
+of this event and can bring the job into the foreground so that it can read
+from the terminal. 
+
+When the backgroup process want to write to controlling terminal, the terminal
+will sends the job the SIGTTOU signal. 
+
+
+
+
+
+

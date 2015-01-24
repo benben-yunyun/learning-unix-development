@@ -1,0 +1,149 @@
+#+TITLE: learning signal of unix
+#+STARTUP: indent
+
+#+BEGIN_SRC text
+
+signals 为unix的软中断。提供进程及线程间同步。
+
+#+END_SRC
+
+
+* Signal Concepts
+
+所有的信号都有一个名字，以SIG开头。
+
+所有的signal定义在sys/signal.h头文件中。用户级别头文件为signal.h。
+
+signal为1-31的常量整形。其中 0 为 空信号。不用。
+
+产生信号的情况如下：
++ 用户按下某些键，中断产生信号。按下DELETE or Control-C 产生 中断信号 SIGINT
++ 硬件异常。除0；内存异常引用SIGSEGV
++ kill命令允许进程产生任何信息给其他进程或者进程组
++ kill函数
++ 软件信号，用来通知不同事件发生。SIGURG 越界数据通过网络传输；SIGPIPE 写给pipe
+  的数据没有读者；SIGALRM 报警触发
+
+当信号发生，有3中行为可以用来处理信号：
++ ignore ：大部分信号，可以被忽略，除了 SIGKILL 和 SIGSTOP。原因要确保内核和管理
+  人员具有kill的方法。但是有些signal，如SIGSEGV
++ catch : 调用用户回调函数。同样的SIGKILL和SIGSTOP无法被捕获
++ default : 每个signal都有自己默认的action。
+
+signal列表：
+| Name      | Description                               | Default action   |
+|-----------+-------------------------------------------+------------------|
+| SIGABRT   | 异常退出 abort                            | terminate+core   |
+| SIGALRM   | 时间触发 alarm                            | terminate        |
+| SIGBUS    | 硬件总线错误                              | terminate+core   |
+| SIGCANCEL | 线程库内部使用                            | ignore           |
+| SIGCHLD   | 子线程退出                                | ignore           |
+| SIGCONT   | 进程继续执行                              | continue/ignore  |
+| SIGEMT    | EMT instruction                           | terminate+core   |
+| SIGFPE    | 算术运算错误                              | terminate+core   |
+| SIGFREEZE | mac 独有，单步调试                        | ignore           |
+| SIGHUP    | 终端或者会话主进程退出                    | terminate        |
+| SIGILL    | 非法指令                                  | terminate+core   |
+| SIGINFO   | status request from keyboard              | ignore           |
+| SIGINT    | 终端中断                                  | terminate        |
+| SIGIO     | 异步IO                                    | terminate/ignore |
+| SIGIOT    | 硬件错误                                  | terminate+core   |
+| SIGKILL   | termination                               | terminate        |
+| SIGPIPE   | 写入无法读取的pipe                        | terminate        |
+| SIGPROF   | 进程时间触发，setitimer                   | terminate        |
+| SIGQUIT   | 终端退出                                  | terminate+core   |
+| SIGSEGV   | 非法内存                                  | terminate+core   |
+| SIGSTKFLT | 协处理器栈错误                            | terminate+core   |
+| SIGSTOP   | stop                                      | stop process     |
+| SIGSYS    | 非法系统调用                              | terminate+core   |
+| SIGTERM   | 结束                                      | terminate        |
+| SIGTRAP   | 跟踪断点中断                              | terminate+core   |
+| SIGTSTP   | 暂停终端                                  | stop process     |
+| SIGTTIN   | 后端进程尝试读取终端                      | stop process     |
+| SIGTTOU   | 后端进程尝试写到终端                      | stop process     |
+| SIGURG    | 当out of band数据到达,TCP提供一种紧急模式 | ignore           |
+| SIGUSR1   | 用户自定义的信号                          | terminate        |
+| SIGUSR2   | 用户自定义的信号                          | terminate        |
+| SIGVTALRM | 虚拟时间触发 setitimer                    | terminate        |
+| SIGWINCH  | 终端尺寸改变                              | ignore           |
+| SIGXCPU   | cpu 超过限制                              | termiante+core   |
+| SIGXFSZ   | file size limit exceeded (setrlimit)      | terminate+core   |
+| SIGXRES   | resource control exceeded                 | terminate+core   |
+
+** signal Function
+
+#+BEGIN_SRC cpp
+
+#include <signal.h>
+
+void (*signal(int signo, void(* func)(int)))(int);
+
+return: previous disposition of signal if OK, SIG_ERR on error.
+
+#+END_SRC
+
+*func* can be three value:
++ the constant *SIG_IGN*: ignore the signals.
++ the constant *SIG_DFL*: use the default action.
++ the address of a function to be called when the signal occurs.
+
+
+*** Man signal
+
+*fork* inherits the signals action. but *exec* will reset to their default
+actions.
+
+A process explicitly specifies *SIG_IGN* as the action for the
+signal *SIGCHLD*, the system will not create _zombie_ processes when the
+children of the calling process exit. As a consequence, the system will discard
+the exit status from the child processes. If the calling process
+subsequencently issues a call to *wait* or equivalent, it will block until all
+of the calling process's children terminate, and then return a value of -1 with
+_errno_ set to *ECHILD*.
+
+The process is automatically awakened by the kernel afeter the signal handler returns.
+
+** Program Start-up
+
+*exec* make the status of the all signals being default or ignore.
+
+*fork* inherits the parent's signal dispositions.
+
+** Unreliable Signals
+
+the signal catch just once. so in the signal catch handler cannot catch a
+other signal. 
+
+** Interrupted System Calls
+
+早起unix，提供在低速设备系统调用时候，阻塞时，如果发生一个信号，则系统调用返回错误EINTR，因为此时可以认为有更好的任务需要处理。
+
+
+* 信号处理函数
+
+** sigaction函数
+
+#+BEGIN_SRC cpp
+int sigaction(int signo, const struct sigaction * restrict act,
+struct sigaction * restrict oact);
+
+struct sigaction {
+void (*sa_handler)(int); 
+sigset_t sa_mask;
+int sa_flags;
+vodi (*sa_sigaction)(int, siginfo_t *, void *);
+}
+
+#+END_SRC
+
+该函数主要功能为：更改信号 *signo* 的处理句柄。
+*act* 非空，则修改句柄， *oact* 非空，则返回修改前的句柄。
+
+该函数保证，在调用信号处理句柄之前，将sa_mask的相关信号屏蔽，然后处理完成后，恢复原有的屏蔽信号。保证在句柄处理的时候，将不会被sa_mask中的信号再中断。
+
+并且该处理句柄，不会再调用一次后更改。
+
+** sigsetjmp & siglongjmp
+
+
+
