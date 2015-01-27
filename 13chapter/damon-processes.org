@@ -15,6 +15,7 @@
 - 没有用的文件描述符需要关闭。
 - 将文件描述符 0，1，2 链接到 \/dev\/null
 
+
 * Error Logging
 
   总共有3种log：
@@ -100,4 +101,47 @@ void vsyslog(int priority, const char * format, va_list arg);
 ** setlogmask
 
 设置logmask，用来屏蔽一些等级的日志。
+
+
+* 单例守护进程 Single-Instance Daemons
+  
+  通过写入文件，然后lockfile来确认是否已经有daemon运行。
+
+
+
+
+
+* 守护进程准则
+  
+  + 守护进程，如果有一个 lock file，保存在 \/var\/run.
+  + 守护进程，如果有一个 configure file，保存在 \/etc.
+  + 守护进程，需要在 \/etc\/rc* or \/etc\/init.d/\* 写入启动脚本。
+  + 守护进程需要读取配置文件，可以通过重置SIGHUP信号量去读取更新的配置文件。
+
+    
+  
+
+
+
+
+* Client-Server Model 
+  
+  Server 采取 fork-exec 提供服务。
+  
+  但是相关的file descriptors需要关闭。设置 close-on-exec flag。
+
+  #+BEGIN_SRC cpp
+  int set_cloexec(int fd)
+  {
+  int val;
+  if ((val=fcntl(fd,F_GETFD,0))<0)
+  return -1;
+ 
+  val |= FD_CLOEXEC;
+  return (fcntl(fd,F_SETFD,val));
+  }
+  #+END_SRC
+
+
+
 

@@ -1,0 +1,178 @@
+#+TITLE: Advanced I/O
+
+* Nonblocking I/O
+
+系统调用将会分成两种类型：慢速 slow 和 其他。
+
+慢速设备可以被永远阻塞：
+- 如果没有数据读取，pipes，terminal devices，network devices 可以阻塞调用者
+- 如果写入数据无法完成写入，pipes，terminal devices，network devices 可以阻塞调用者
+- 读写时，文件拥有强制的纪录锁(mandatory record locking)
+- ioctl 操作
+- 一些进程间通信函数
+
+非阻塞的I/O函数，并不会阻塞，而是返回一个错误码。
+
+将一个文件描述符设置为 nonblocking 方法：
+- *open* 时 设置 *O\_NONBLOCK*
+- 文件打开后，使用 *fcntl* 打开 *O\_NONBLOCK*
+
+  
+* Record Locking
+
+*Record Locking* 是能够保证一个文件的一个区域只有一个进程可以访问，改变。所以可以叫做 *byte-range locking* 锁定一个文件的一个区域。
+
+*flock* 锁定整个文件。
+
+** fcntl Record Locking
+
+#+BEGIN_SRC cpp
+int fcntl(int fd, int cmd, .../* struct flock * flockptr */);
+struct flock {
+short l_type; /* F_RDLCK, F_WRLCK or F_UNLCK*/
+short l_whence; /*SEEK_SET SEEK_CUR or SEEK_END*/
+off_t l_start; /* offset in bytes, relative to l_whence*/
+off_t l_len; /*length in bytes; 0 means lock to EOF*/
+pid_t l_pid; /* returned with F_GETLK */
+};
+#+END_SRC
+
+_cmd_ : F\_GETTLK F\_SETLK or F\_SETLKW.
+- F_GETLK 
+  获得 flock 结构体描述的锁 是否被其他进程已经锁定了。如果有锁，则会覆盖flockptr结构体，如果没有锁，则flockptr结构会将 l_type 设为 F_UNLCK。
+- F_SETLK
+  设置flockptr描述的锁，如果无法锁定，则返回 EACCES 或者 EAGAIN
+- F_SETLKW
+  阻塞版的F_SETLK。W wait。
+
+_flockptr_ : 为一个 *flock* 的结构体指针。
+
+说明：
+- l_len = 0, 表示该锁定行为可以无限扩展到最大的偏移。即从 l_whence 和 l_start 确定的开始位置，一直到文件结尾，也包括后续append的内容。
+- 锁定整个文件，可以设定 l_start = 0, l_whence = SEEK_SET , l_len = 0.
+- 锁定一个大的区域，然后释放中间区域，那么系统会对锁定进行合并和分割。
+- F_GETLK 并不会报告本进程的锁情况。
+
+
+*** Deadlock 
+
+死锁是两个进程等待对方锁定的资源，造成的都无法满足运行需求而系统阻塞的情况。
+
+
+
+
+
+
+
+
+
+
+
+
+*** 记录锁的继承和释放
+
+- 记录锁和进程(process)与文件(file descriptors)绑定的。即是说：
+  - 一个进程推出，该进程拥有的所有的record locks将被释放
+  - 一个文件关闭时，该文件描述符所拥有的record locks将被释放，不管是否还有其他描述符
+- 记录锁不会被子进程继承(fork)
+- 记录锁在exec中可以被继承, 但是通过设置 close-on-exec ，可以将文件描述符关闭，并释放对应的record locks
+
+
+
+*** Locks at End of File
+
+在锁定文件的区域和文件长度有关的时候，因为我们无法获得一个文件的实际的长度，因为我们没法锁定一个整体文件的时候。调用 *fstat* 并无法获得一个文件的确切长度。
+
+
+
+
+
+* I/O Multiplexing
+
+多路I/O，是读取多个文件来源，写入多个文件来源。
+
+** select and pselect Functions
+
+*** select
+#+BEGIN_SRC cpp
+int select(int maxfdp1, 
+fd_set * restrict readfds, 
+fd_set * restrict writefds, 
+fd_set * restrict exceptfds,
+struct timeval * restrict tvptr);
+
+#+END_SRC
+**** 参数
+***** tvptr
+- tvptr == NULL
+  wait forever.
+- tvptr->tv_sec == 0 && tvptr->tv_usec == 0
+  Don't wait at all. nonblocking.
+- tvptr->tv_set != 0 || tvptr->tv_usec != 0
+  Wait the specified number of seconds and microseconds.
+
+***** readfds writefds and exceptfds
+
+*fd_set* just a big array of bits. and each bit means a descriptor with the index of this bit.
+
+#+BEGIN_SRC cpp
+int FD_ISSET(int fd, fd_set * fdset);
+void FD_CLR(int fd, fd_set * fdset);
+void FD_SET(int fd, fd_set * fdset);
+void FD_ZERO(fd_set * fdset);
+#+END_SRC
+
+这个三个参数，都可以为null，表示我们不关心这些类型的描述符。
+
+**** maxfdp1 
+
+表示最关心的描述符号+1.
+
+
+
+**** 返回
+
+- -1
+  错误发生。例如 发生了信号。
+- 0
+  没有描述符ready，而且已经超时。
+- >0
+  表示已经准备就绪的描述符个数。
+
+
+
+
+
+**** exception 说明
+
+- 在读取一个到达文件结束的时候，通过select检测可读状态，select认为该文件可读，然后返回。而读取的时候，不能读取任何内容，这种状态认为文件已经结尾。文件结尾并不会引起exception。
+
+
+
+
+
+*** pselect
+
+#+BEGIN_SRC cpp
+int pselect(int maxfdp1,
+fd_set * restrict readfds,
+fd_set * restrict writefds,
+fd_set * restrict exceptfds,
+const struct timespec * restrict tsptr,
+const sigset_t * restrict sigmask);
+#+END_SRC
+
+pselect 与 select 不同的地方如下：
+- pselect 的超时度量结构体为 timespec, 具有更高的精度
+- pselect 中 tsptr 为 const 对象，保证超时时间不改变
+- sigmask
+  - NULL,same as select
+  - !=NULL, 信号屏蔽码会被屏蔽，然后返回后恢复。
+
+
+
+
+
+** poll Function
+
+
